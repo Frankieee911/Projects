@@ -1,0 +1,1019 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Frankie Ma"
+date: "2023-09-17"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    code_folding: hide
+    theme: journal
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+colors <- c("deepskyblue4", "brown3", "darkolivegreen4", 
+ "cornflowerblue", "darkorange3", "brown4", "mediumpurple4", "red")
+```
+
+![](/Users/mxx/Downloads/Final%20Project/ucla-anderson.png)
+
+## Introduction
+
+The purpose of this project is to predict whether or not a student will
+be admitted in a Master program in the University of California, Los
+Angeles (UCLA). The data that will be used are downloaded from Kaggle
+and we will be saving it as `predicting_data`. (Credits to: Mohan S
+Acharya, Asfia Armaan, Aneeta S Antony : A Comparison of Regression
+Models for Prediction of Graduate Admissions, IEEE International
+Conference on Computational Intelligence in Data Science 2019) The link
+of the source can be found here:
+<https://www.kaggle.com/datasets/mohansacharya/graduate-admissions?select=Admission_Predict_Ver1.1.csv>
+
+```{r setup, include=FALSE}
+library(readr)
+library(vembedr)
+admin_data<- read_csv("/Users/mxx/Downloads/Final Project/admission_dataset.csv")
+```
+
+### Motive
+
+![admission
+profile](/Users/mxx/Downloads/Final%20Project/admission-profile.png)
+Since a lot of students are determined to pursue a master degree after
+obtaining their bachelor's degree, including me, as a senior, I think it
+would be interesting to know what attracts the admission officers, or
+their standard of sending an offer to students. Based on the dataset, I
+desire to predict the possibility of admission for each students based
+on past admission statistics. This analytic project is specialized in
+the Master of Science in Business Analytics, a graduate program in UCLA
+that I am interested in applying, so this gives me a chance to get a
+better understanding of the program and my chance of getting in. After
+the obtaining the predicted chance of admitting, the data will be
+categorized into "Admitted" and "Rejected" based on a certain scale
+(which I'm still deciding), so this project will end up as
+classification models.
+
+## Class of 2023 Admissions Statistics
+
+```{r}
+embed_url("https://www.youtube.com/watch?v=eWWh-qLzkw0&list=PLtXj799QgfhTLP1lASVs80DadZBEK5KxW")
+```
+
+This video on YouTube shows some additional information about the
+program, and the admission statistics for the Class of 2023 can be found
+[20:38].
+
+From UCLA official admission statistics of MSBA program in the video
+above, here are some important information:
+
+The admittance rate is only about 7% (93 out of 1315) with international
+student taking up 60%, which means that only 55 international students
+got accepted!
+
+The average GPA is 3.6. The average TOEFL is 110.
+
+So, based on the information, it is fair to consider scores above the
+average is competitive.
+
+### Data Description
+
+The dataset contains 500 entries of data and 6 numeric parameters:
+
+1)  GRE Scores (out of 340) This is a standard test that is similar to
+    SAT and ACT that students used to apply for undergraduate programs.
+    The test contains 3 sections: Analytical Writing, Verbal Reasoning,
+    and Quantitive Reasoning. Nowadays, GRE scores are longer a "must"
+    when applying to many master programs, but all programs do encourage
+    students to submit it.
+
+2)  TOEFL Scores (out of 120) A language test that are required for
+    international students who "do not attend a university where the
+    medium of instruction was English, but the official language of the
+    country was NOT English (this includes both India and Singapore).
+    (Additional information can be found:
+    <https://www.anderson.ucla.edu/degrees/master-of-science-in-business-analytics/admissions/prerequisites#a-1170948>)
+
+3)  University Rating (out of 5)
+
+4)  Statement of Purpose (out of 5)
+
+5)  Letter of Recommendation Strength (out of 5)
+
+6)  Undergraduate GPA （out of 10)
+
+7)  Research Experience (either 0 or 1)
+
+8)  Chance of Admit (ranging from 0 to 1)
+
+### Response Variable and Determination
+
+Even though the default threshold is 60%, in this project, I would like
+to keep it at that level and not to rise the admitted level, because
+students are not limited to apply to one program and sometimes they
+might be wait-listed to wait for an empty spot which others might end up
+declining the offer when they get the admission from another program
+which they prefer over this. So, it wouldn't hurt for students to apply
+without having an admitted rate high enough to guarantee their spot.
+
+![](/Users/mxx/Downloads/Final%20Project/congrats.gif)
+
+Let's get this party started!
+
+## Data Processing
+
+First, let's load all the packages we are going to need for following
+analysis and check if there are any missing value or outliers and clean
+up the data first, and then take a general look at the data:
+
+```{r}
+library(naniar)
+library(dplyr)
+library(tidymodels)
+library(corrplot)
+library(tidyverse)
+library(ggplot2)
+library(ISLR)
+library(ggthemes)
+library(kknn)
+library(yardstick)
+library(dials)
+library(rsample)
+library(tune)
+library(corrplot)
+library(themis)
+library(glmnet)
+library(hardhat)
+library(rpart.plot)
+library(cowplot)
+library(MASS)
+library(discrim)
+library(klaR)
+library(ranger)
+library(vip)
+```
+
+### Missing Values
+
+```{r}
+tidymodels_prefer() # avoid conflicts between packages
+ls(admin_data)
+vis_miss(admin_data)
+```
+
+Looks like we don't have any missing data in our data set, which is
+fantastic!
+
+### Exploring Data
+
+#### GPA
+
+Since the given GPA in the dataset was not documented using the 4.0
+scale, for clear interpretation, let's convert it into the scale we are
+familiar with.
+
+```{r}
+admin_data<- admin_data %>%
+  mutate(GPA = CGPA*0.4) %>%
+  select(-CGPA)
+
+admin_data %>%
+  filter(GPA >= 3.6)
+```
+
+#### TOEFL Score
+
+```{r}
+admin_data %>%
+  filter(TOEFL_Score >= 110)
+```
+
+193 out of 500 students, which is 38.6%, have scored at least 110 on
+TOEFL.
+
+Based on the class profile we have above and focus on these two
+essential preditors, let's find out their corresponding
+`chance of admit` compared to the actual statistic.
+
+```{r}
+admin_data %>%
+  select(GPA, TOEFL_Score, Chance_of_Admit) %>%
+  mutate(Result = if_else(GPA >= 3.6 & TOEFL_Score >= 110, "Admitted", "Rejected")) %>%
+  group_by(Result) %>%
+  summarize(avg_rate = mean(Chance_of_Admit)) %>%
+  arrange(avg_rate)
+```
+
+#### Effect of number of research on admittance
+
+Do number of research have anything to do with their chance of getting
+accepted? Since I have decided the probability of admission above 60% to
+be "Admitted", let's compare it with the number of research under these
+categories:
+
+```{r}
+admin_data %>% 
+  mutate(Result = if_else(GPA >= 3.6 & TOEFL_Score >= 110, "Admitted", "Rejected")) %>%
+  ggplot(aes(x = Result, fill = factor(Research))) +
+  geom_bar(position = "fill")
+```
+
+Well, it is definitely good to have done a research, which can be a good
+representative of your academic skill, but not knowing what kind of
+research and whether it is relevant for this specific program, we will
+not emphasize on this aspect.
+
+#### Effect of university rating on addmittance
+
+```{r}
+admin_data %>% 
+  mutate(Result = if_else(GPA >= 3.6 & TOEFL_Score >= 110, "Admitted", "Rejected")) %>%
+  ggplot(aes(x = Result, fill = factor(University_Rating))) +
+  geom_bar(position = "fill")
+```
+
+Based on the bar chart, we can see the admittance has some relevance
+between the `University Rating` and the final result that if students
+are from a better University they are more likely to get in, however, by
+observing the portion taken up under each category, we can see that the
+largest percentage
+
+### Correlation Matrix
+
+Now let's take a look at the distribution of `Chance of Admit`.
+
+```{r}
+admin_data %>%
+  select(is.numeric) %>%
+  cor() %>%
+  corrplot(type = "lower", diag = FALSE, method = "square")
+```
+
+Looks like all the predictors have a relative strong positive
+correlation with each other except for `Research` since the color is
+much lighter. Since our purpose is to predict the chance of getting
+admitted, let's focus on the bottom line that we find `GPA`,
+`GRE_Score`, and `TOEFL_Score` have an incredible positive correlation
+with it, so I will dig into it later.
+
+```{r}
+fit.1<- lm(Chance_of_Admit ~ GPA, data = admin_data)
+plot(admin_data$GPA, admin_data$Chance_of_Admit,
+     xlab = "Undergraduate GPA", ylab = "Chance of Admitance")
+abline(fit.1, col = "red")
+
+fit.2<- lm(Chance_of_Admit ~ GRE_Score, data = admin_data)
+plot(admin_data$GRE_Score, admin_data$Chance_of_Admit,
+     xlab = "GRE Score", ylab = "Chance of Admitance")
+abline(fit.2, col = "red")
+
+fit.3<- lm(Chance_of_Admit ~ TOEFL_Score, data = admin_data)
+plot(admin_data$TOEFL_Score, admin_data$Chance_of_Admit,
+     xlab = "TOEFL Score", ylab = "Chance of Admitance")
+abline(fit.3, col = "red")
+```
+
+## Model Building
+
+### Data Splitting
+
+Let's first start with a simple stratified sampling:
+
+```{r}
+set.seed(1316)
+admin_split<- initial_split(admin_data, prop = 0.80, strata = Chance_of_Admit)
+admin_train<- training(admin_split)
+admin_test<- testing(admin_split)
+```
+
+Since we do not have a fairly large dataset with more than 1,000
+observations and to build a better model, I decided to set the
+percentage as 80%.
+
+### Creating a Recipe
+
+By using the training data, I create a recipe predicting the outcome
+variable, `Chance_to_Admit`, with all other predictor variables. And
+since interaction effect occurs when the effect of one variable depends
+on the value of another variable, I decided to build interactions
+between:
+
+-   `GPA` and `GRE_Score`
+-   `GPA` and `TOEFL_Score`
+
+```{r}
+admin_recipe<- recipe(Chance_of_Admit ~ ., data = admin_train) %>%
+  step_interact(terms = ~GPA:GRE_Score) %>%
+  step_interact(terms = ~GPA:TOEFL_Score)
+
+prep(admin_recipe) %>%
+  bake(new_data = admin_train) %>%
+  head()
+```
+
+### Linear Regression
+
+First, specify the model engine we want to fit, in this case, linear
+regression model, and then setting up a workflow:
+
+```{r}
+lm_model<- linear_reg() %>%
+  set_mode("regression") %>%
+  set_engine("lm")
+
+lm_wkflow<- workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(admin_recipe)
+```
+
+Now, let's fit the training data into this model and see how it fits:
+
+```{r}
+lm_fit<- fit(lm_wkflow, admin_train)
+lm_fit %>%
+  extract_fit_parsnip() %>%
+  tidy()
+```
+
+Next, let's use the following code to predict `Chance_of_Admit` value
+for each observation in the training set and compare it with the actual
+observed `Chance_of_Admit` value:
+
+```{r}
+admin_train_res<- predict(lm_fit, new_data = admin_train %>% select(-Chance_of_Admit))
+admin_train_res<- bind_cols(admin_train_res, admin_train %>% select(Chance_of_Admit))
+admin_train_res %>%
+  head()
+
+admin_metrics<- metric_set(rmse, rsq, mae)
+admin_metrics(admin_train_res, truth = Chance_of_Admit, estimate = .pred)
+```
+
+To have a better view and interpretation of the above data, let's put it
+in a plot:
+
+```{r}
+admin_train_res %>%
+  ggplot(aes(x = .pred, y = Chance_of_Admit)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(lty = 2) +
+  theme_bw() +
+  coord_obs_pred()
+```
+
+It is clear to see that our dots forms a straight line, it's a sign that
+this model did a good job! Congrats! But for a better comparision with
+the statistics we are going to have in through validation approach,
+let's find out its mean squared error (RMSE) and the **testing** RMSE.
+
+```{r}
+admin_test_res<- predict(lm_fit, new_data = admin_test %>% select(-Chance_of_Admit))
+admin_test_res<- bind_cols(admin_test_res, admin_test %>% select(Chance_of_Admit))
+
+admin_metrics(admin_test_res, truth = Chance_of_Admit, estimate = .pred)
+```
+
+Understanding our criteria metric: - RMSE (root mean squared error):
+shows how far apart the predicted values are from the observed values in
+the dataset on average, the lower the better fit
+
+-   $R^2$ (range from 0 to 1): shows the proportion of the variance in
+    the response variable of a regression model that can be explained by
+    the predictor variables, the higher the better fit
+
+### K-Nearest Neighbors
+
+```{r}
+knn_model<- nearest_neighbor() %>%
+  set_engine("kknn") %>%
+  set_mode("regression")
+
+knn_wkflow<- workflow() %>%
+  add_model(knn_model) %>%
+  add_recipe(admin_recipe)
+```
+
+Let's fit the data to this model and review the results:
+
+```{r}
+knn_fit<- fit(knn_wkflow, admin_train)
+knn_fit %>%
+  extract_fit_parsnip()
+```
+
+It has suggested our best k value to be 5, which is our default value.
+Let's generate predictions from this model for the training set and
+testing set and compare their RMSE like we did for linear regression:
+
+```{r}
+admin_train_knn<- predict(knn_fit, new_data = admin_train %>% select(-Chance_of_Admit))
+admin_train_knn<- bind_cols(admin_train_knn, admin_train %>% select(Chance_of_Admit))
+
+admin_test_knn<- predict(knn_fit, new_data = admin_test %>% select(-Chance_of_Admit))
+admin_test_knn<- bind_cols(admin_test_knn, admin_test %>% select(Chance_of_Admit))
+
+admin_test_knn %>%
+  ggplot(aes(x = .pred, y = Chance_of_Admit)) +
+  geom_point(alpha = 0.2) +
+  geom_abline(lty = 2) +
+  theme_bw() +
+  coord_obs_pred()
+
+admin_metrics(admin_train_knn, truth = Chance_of_Admit, estimate = .pred)
+admin_metrics(admin_test_knn, truth = Chance_of_Admit, estimate = .pred)
+```
+
+### Conclusion
+
+As we observe from the above statistics, even though KNN model performs
+better with a lower RMSE than linear regression, I consider linear
+regression as a better model since we want what is best for the testing
+set.
+
+## Evaluation
+
+### Validation Approach - Linear Model
+
+We have finished the train-test split and deciced linear model to be our
+best model so far, let's now consider using the validation approach that
+we will train our models on the training sample, and then choose a
+best-fitting model by comparing their performances on the validation
+set.
+
+Since we only have about 400 data entries in our original training set,
+let's have a lower percentages for splitting the data.
+
+```{r}
+admin_valid<- validation_split(admin_train, prop = 0.70, strata = Chance_of_Admit)
+```
+
+Since we have already set up a basic model in previous section, there is
+no need to create it again, let's just fit the data using
+`fit_resamples()` instead of `fit()` and see how it results:
+
+```{r}
+lm_fit_val<- lm_wkflow %>%
+  fit_resamples(resamples = admin_valid)
+
+collect_metrics(lm_fit_val)
+```
+
+We can see there are no standard error values because we have only one
+resample (n=1). Furthermore, we observe a RMSE value of about 0.059 and
+an $R^2$ value of about 0.822.
+
+Comparing this result from the resamples to our previous result we get
+from train-test split, we found them to have similar metrics for
+training set.
+
+### K-fold Cross-validation
+
+Acknowledging the fact that K-fold Cross-validation usually generates
+best estimates of testing data, so let's try through this approach by
+tuning to find the best value of neighbors that yields the best
+performances. In this case, we need to create a new recipe:
+
+```{r}
+knn_mod_cv<- nearest_neighbor(neighbors = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("kknn")
+
+knn_wkflow_cv<- workflow() %>%
+  add_model(knn_mod_cv) %>%
+  add_recipe(admin_recipe)
+```
+
+Next, let's create a k-fold dataset using the `vfold_cv()` function. The
+folds, `v` describe a number of groups we decide to partition the data,
+to make a better model, I decided to have 10 folds.
+
+```{r}
+admin_folds<- vfold_cv(admin_train, v = 10)
+testing(admin_folds[[1]][[1]])
+```
+
+We also need a grid to fit the models within each fold, so we'll use
+`tune_grid()` to achieve that. Then, we will use `autoplot()` to have a
+better overview of the performance of different hyperparameter
+(neighbors) values:
+
+```{r}
+neighbors_grid<- grid_regular(neighbors(range = c(1, 10)), levels = 10)
+tune_res<- tune_grid(object = knn_wkflow_cv,
+                     resamples = admin_folds,
+                     grid = neighbors_grid)
+
+# to save time for processing
+save(tune_res, file = "tune_res.rda")
+write_rds(tune_res, file = "tune_res.rds")
+
+tune_res %>% 
+  autoplot()
+tune_res %>%
+  collect_metrics()
+```
+
+The line graph tells us that with increasing the number of neighbors, we
+are more likely to have a better performance. However, the extremely
+high numbers can also be a issue of overfitting, so we'll need to pay
+extra attention to that. But, through K-fold Cross-validation, we have
+decrease the danger of overfitting.
+
+Let's focus on our top five performing models:
+
+```{r}
+show_best(tune_res, metirc = "rmse")
+```
+
+We can observe the difference between using 10 neighbors and 6 neighbors
+is merely about 0.003, so I don't think it's worth increasing the
+neighbors to relatively high. However, let's use
+`select_by_one_std_err()` function to help us find the best model!
+
+```{r}
+best_neighbors<- select_by_one_std_err(tune_res, desc(neighbors), metric = "rmse")
+best_neighbors
+```
+
+It has selected 10 neighbors, so let's use this value to specify the
+previous unspecified `neighbors` argument in `knn_wkflow_cv` using
+`finalize_workflow()`:
+
+```{r}
+final_wf<- finalize_workflow(knn_wkflow_cv, best_neighbors)
+final_fit<- fit(final_wf, admin_train)
+final_fit
+augment(final_fit, new_data = admin_test) %>%
+  rmse(truth = Chance_of_Admit, estimate = .pred)
+```
+
+With a lower RMSE compared to the regular KNN models, it definitely
+performed better.
+
+## Classification Aproach
+
+We have successfully build the model to anticipate the chance of
+admittance through the regression approach, let's categorize the result
+according to the criteria and compare our results through classification
+approach!
+
+```{r}
+admin_data_2<- admin_data %>%
+  mutate(Result = if_else(GPA >= 3.6 & TOEFL_Score >= 110, "Admitted", "Rejected"))
+admin_data_2$Result<- relevel(factor(admin_data_2$Result), ref = "Admitted")
+```
+
+#### Admittance between GPA, TOEFL Score and GRE Score
+
+```{r}
+p1<- admin_data_2 %>%
+  ggplot(aes(x = GPA, y= Chance_of_Admit, color = Result)) +
+  geom_point() +
+  scale_color_manual(values = c("Admitted" = "darkolivegreen4",
+                                "Rejected" = "red")) +
+  theme_minimal() +
+  xlab("Undergrade GPA") +
+  ylab("Admittance Rate") +
+  labs(color = "Result")
+
+p2<- admin_data_2 %>%
+  ggplot(aes(x = TOEFL_Score, y= Chance_of_Admit, color = Result)) +
+  geom_point() +
+  scale_color_manual(values = c("Admitted" = "darkolivegreen4",
+                                "Rejected" = "red")) +
+  theme_minimal() +
+  xlab("TOEFL Score") +
+  ylab("Admittance Rate") +
+  labs(color = "Result")
+
+plot_grid(p1, p2, ncol = 2)
+```
+
+We see the majority of the data result in red based on our criteria, but the result is reasonble since our overall admittance rate for this program is only 7%. The competition is fierce!
+
+### Model Building
+
+Since we are analyzing the data from a differen approach, we need to set
+up a new recipe, while keeping others the same, we also need to exclude
+`Chance_of_Admit` and dummy code `Result`:
+
+```{r}
+set.seed(1317)
+admin_split_c<- initial_split(admin_data_2, prop = 0.80, strata = Result)
+admin_train_c<- training(admin_split_c)
+admin_test_c<- testing(admin_split_c)
+
+admin_recipe_c<- recipe(Result ~ GRE_Score + TOEFL_Score + University_Rating + SOP + LOR + Research + GPA, 
+                        data = admin_train_c) %>%
+  step_interact(terms = ~ GPA:GRE_Score) %>%
+  step_interact(terms = ~ GPA:TOEFL_Score)
+
+prep(admin_recipe_c) %>%
+  bake(new_data = admin_train_c)
+```
+
+#### Logistic Regression
+
+Let's specify a basic ***logistic regression*** for classification using
+the `glm` engine and create a responding workflow.
+
+```{r}
+log_reg<- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+admin_wkflow_c<- workflow() %>%
+  add_model(log_reg) %>%
+  add_recipe(admin_recipe_c)
+
+log_fit<- fit(admin_wkflow_c, admin_train_c)
+```
+
+After fitting the training set to the logistic model, we can use
+`predict()` to assess the model's performance.
+
+```{r}
+predict(log_fit, new_data = admin_train_c, type = "prob")
+```
+
+From the above table, each row represents the probability predicted by
+the model that a given observation belongs to a certain class
+(admitted/rejected), however, the number in the tibble looks quite
+confusing and there are 399 rows, so we can try to summarize the
+predicted values using `augment()` and create a corresponding confusion
+matrix for better visualization:
+
+```{r}
+augment(log_fit, new_data = admin_train_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+How to analyze a confusion matrix? As we can see the label on the axis
+is "Truth" and "Prediction" separately, so a good model will have more
+numbers if our predication matches the actual result. So, in this case,
+we have an incredible majority satisfying this condition. Let's find out
+it's precise accuracy:
+
+```{r}
+log_reg_acc<- augment(log_fit, new_data = admin_train_c) %>%
+  accuracy(truth = Result, estimate = .pred_class)
+log_reg_acc
+```
+
+We have an approximately 98% accuracy of the logistic regression model,
+which is quite impressive, but I am a little worried about the model to
+be "overfitting"; thus, we will make the conclusion after seeing its
+performance on testing data.
+
+#### LDA
+
+Setting up the LDA model:
+
+```{r}
+lda_mod<- discrim_linear() %>%
+  set_mode("classification") %>%
+  set_engine("MASS")
+
+adminlad_wkflow<- workflow() %>%
+  add_model(lda_mod) %>%
+  add_recipe(admin_recipe_c)
+
+lda_fit<- fit(adminlad_wkflow, admin_train_c)
+```
+
+We will repeat the steps we did above to assess the model's performance
+by constructing the confusion matrix and calcuating the accuracy.
+
+```{r}
+augment(lda_fit, new_data = admin_train_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+
+lda_acc<- augment(lda_fit, new_data = admin_train_c) %>%
+  accuracy(truth = Result, estimate = .pred_class)
+lda_acc
+```
+
+#### QDA
+
+Setting up the QDA model:
+
+```{r}
+qda_mod<- discrim_quad() %>%
+  set_mode("classification") %>%
+  set_engine("MASS")
+
+adminqda_wkflow<- workflow() %>%
+  add_model(qda_mod) %>%
+  add_recipe(admin_recipe_c)
+
+qda_fit<- fit(adminqda_wkflow, admin_train_c)
+```
+
+Confusion matrix and accuracy:
+
+```{r}
+augment(qda_fit, new_data = admin_train_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+
+qda_acc<- augment(qda_fit, new_data = admin_train_c) %>%
+  accuracy(truth = Result, estimate = .pred_class)
+qda_acc
+```
+
+#### Naive Bayes
+
+Setting up the Naive Bayes model:
+
+```{r}
+nb_mod<- naive_Bayes() %>%
+  set_mode("classification") %>%
+  set_engine("klaR") %>%
+  set_args(unsekernel = FALSE)
+
+adminnb_wkflow<- workflow() %>%
+  add_model(nb_mod) %>%
+  add_recipe(admin_recipe_c)
+
+nb_fit<- fit(adminnb_wkflow, admin_train_c)
+```
+
+Confusion matrix and accuracy:
+
+```{r}
+augment(nb_fit, new_data = admin_train_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+
+nb_acc<- augment(nb_fit, new_data = admin_train_c) %>%
+  accuracy(truth = Result, estimate = .pred_class)
+nb_acc
+```
+
+#### Model Comparison and Assessment
+
+Let's put all the accuracies we got from each model above to compare
+them.
+
+```{r}
+accuracies<- c(log_reg_acc$.estimate,
+               lda_acc$.estimate,
+               qda_acc$.estimate,
+               nb_acc$.estimate)
+models<- c("Logistic Regression", "LDA", "QDA", "Naive Bayes")
+performances<- tibble(accuracies = accuracies, models = models)
+performances %>% arrange(-accuracies)
+```
+
+Looks like the Logistic Regression model and QDA model has the highest
+accuracy, so we will fit these two models to the testing dataset.
+
+#### Testing Data
+
+1)  For Logistic Regression:
+
+```{r}
+augment(log_fit, new_data = admin_test_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class)
+
+augment(log_fit, new_data = admin_test_c) %>%
+  roc_curve(Result, .pred_Admitted) %>%
+  autoplot()
+```
+
+2)  For QDA:
+
+```{r}
+augment(qda_fit, new_data = admin_test_c) %>%
+  conf_mat(truth = Result, estimate = .pred_class)
+
+augment(qda_fit, new_data = admin_test_c) %>%
+  roc_curve(Result, .pred_Admitted) %>%
+  autoplot()
+```
+
+As we observe the confusion matrix and the ROC curve, QDA actually performs slightly better than logistic regression on testing data.
+
+## Regression or Classification
+
+![](/Users/mxx/Downloads/Final%20Project/selection.gif){style="display: block; margin: 1em auto"}
+
+So should we choose the regression approach or the classification approach? Let's find out!!!
+
+### Elastic Net Regression
+
+We can use the previous recipe we created and the folds for regression, but we need to create a fold set for classification.
+
+```{r}
+admin_folds_c<- vfold_cv(admin_train_c, v = 10)
+```
+
+Next, we are trying to set up an elastic net regression for each method followed by the creation of a corresponding workflow:
+
+```{r}
+en_admin<- linear_reg(mixture = tune(), penalty = tune()) %>%
+  set_mode("regression") %>%
+  set_engine("glmnet")
+
+en_wkflow_admin<- workflow() %>%
+  add_recipe(admin_recipe) %>%
+  add_model(en_admin)
+
+en_admin_c<- logistic_reg(mixture = tune(), penalty = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+en_wkflow_admin_c<- workflow() %>%
+  add_recipe(admin_recipe_c) %>%
+  add_model(en_admin_c)
+```
+
+Using the resampled objects previously, let's try it using the hyperparameter tuning to determine the performance of the models. To
+avoid iteracy, we can create just one grid that's usable for both approach.
+
+```{r}
+en_grid<- grid_regular(penalty(range = c(0, 1), 
+                               trans = identity_trans()),
+                       mixture(range = c(0, 1)), levels = 10)
+```
+
+Exciting! Let's fit all those models to our data! To save time for processing, I have used `save()` and `write_rds()`.
+
+```{r}
+tune_res_admin<- tune_grid(en_wkflow_admin, resamples = admin_folds, grid = en_grid)
+save(tune_res_admin, file = "tune_res_admin.rda")
+write_rds(tune_res_admin, file = "tune_res_admin.rds")
+
+tune_res_admin_c<- tune_grid(en_wkflow_admin_c, resamples = admin_folds_c, grid = en_grid)
+save(tune_res_admin_c, file = "tune_res_admin_c.rda")
+write_rds(tune_res_admin_c, file = "tune_res_admin_c.rds")
+```
+
+Let's interpret our regression data first:
+
+```{r}
+tune_res_admin %>%
+  autoplot()
+tune_res_admin %>%
+  collect_metrics()
+```
+
+The x-axis shows the ***amount of regularization*** which is the penalty hyperparameter that covers the scope of values we indicated (0 to 1), and the upsides of combination are addressed by the different-hued lines. As we can observe from the scale of our y-axis for both metrics (RMSE and $R^2$), the range is relatively small which means the variation of the resulting performance between models is very small.
+
+Now, let's take a look at how our classification model has performed:
+
+```{r}
+tune_res_admin_c %>%
+  autoplot()
+tune_res_admin_c %>%
+  collect_metrics()
+```
+
+For the ***classification*** dataset, the scale for the y-axis for both metrics (accuracy and ROC AUC) is relatively large compared to the plot ***regression*** especially ROC AUC, it does not change much between 0.1 and 0.3, but between 0.3 and 1.0, the value change drastically.
+
+#### Model Performance Selection
+
+```{r}
+best_en_admin<- select_by_one_std_err(tune_res_admin, metric = "rmse",
+                                      penalty, mixture)
+best_en_admin
+
+en_final_admin<- finalize_workflow(en_wkflow_admin, best_en_admin)
+en_final_admin<- fit(en_final_admin, data = admin_train)
+augment(en_final_admin, new_data = admin_train) %>%
+  rmse(truth = Chance_of_Admit, estimate = .pred)
+```
+
+We can see that the RMSE in the testing dataset is smaller than the result from K-fold cross validation. And it has a similar RMSE to linear regression.
+
+```{r}
+best_en_admin_c<- select_by_one_std_err(tune_res_admin_c, metric = "roc_auc",
+                                        penalty, mixture)
+best_en_admin_c
+
+en_final_admin_c<- finalize_workflow(en_wkflow_admin_c, best_en_admin_c)
+en_final_admin_c<- fit(en_final_admin_c, data = admin_train_c)
+augment(en_final_admin_c, new_data = admin_train_c) %>%
+  roc_auc(Result, .pred_Admitted)
+```
+
+It also performances better for classification approach with extremely high ROC AUC.
+
+### Random Forest
+
+Instead of building a single decision tree, I decide to construct a random forest that includes a set of decision trees. But we need to make some changes based on previous recipe that it is neccessary to normalize all predictors:
+```{r}
+tree_admin_recipe<- admin_recipe %>%
+  step_normalize(all_predictors())
+
+tree_admin_recipe_c<- admin_recipe_c %>%
+  step_normalize(all_predictors())
+```
+
+Then, let's set up two separate models and workflow, one for regression (`rf_reg_spec` and `rf_reg_wf`) and one for classification (`rf_class_spec` and `rf_class_wf`) accordingly. And let's flag three hyperparameters for tunning, `mtry`, `trees` and `min_n`.
+```{r}
+rf_reg_spec<- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("regression")
+rf_reg_wf<- workflow() %>%
+  add_model(rf_reg_spec) %>%
+  add_recipe(tree_admin_recipe)
+
+rf_class_spec<- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+rf_class_wf<- workflow() %>%
+  add_model(rf_class_spec) %>%
+  add_recipe(tree_admin_recipe_c)
+```
+
+After having these three hyperparameters, we need to set up a grid for them to consider:
+```{r}
+rf_grid<- grid_regular(mtry(range = c(1, 6)),
+                       trees(range = c(200, 600)),
+                       min_n(range = c(10, 20)), levels = 5)
+rf_grid
+```
+
+Next, we need to fit all the random forest models we've specified in the previous code chunk to each dataset. Since it takes up a long time to run the code, I have saved the results to two files for each model.
+```{r}
+tune_reg<- tune_grid(rf_reg_wf, resamples = admin_folds, grid = rf_grid)
+save(tune_reg, file = "tune_reg.rda")
+write_rds(tune_reg, file = "tune_reg.rds")
+tune_class<- tune_grid(rf_class_wf, resamples = admin_folds_c, grid = rf_grid)
+save(tune_class, file = "tune_class.rda")
+write_rds(tune_class, file = "tune_class.rds")
+```
+
+Now, we can plot the model results and take a look at them:
+```{r}
+autoplot(tune_reg) + theme_minimal()
+```
+
+This plot shows the result for regression dataset that the lowest RMSE result when the randomly selected predictors equals two and $R^2$ tends to decrease as we increase `mtry`. The number of `trees`, as indicted in the legend, does not make much of a difference overall that these lines seems to have the same trend. The smallest RMSE and the highest $R^2$ yields from a minimal node size of 20 that seems to produce slightly better results than a minimum size of 10.
+
+```{r}
+autoplot(tune_class) + theme_minimal()
+```
+
+This plot shows the result for the classification dataset, unlike our results from regression, our performances seems to improve as we increase `mtry` that the accuracy and ROC AUC begins to increase. The variation between trees is not drastic as well. A minimal node size of 10 tends to produce slightly better results than the minimum size of 20.
+
+After a brief analyze, we'll need to select the optimal random forest model for each dataset and fit each of those to the entire training sets respectively, and then use `extract_fit_parsnip()` and `vip()` to create and view the variable importance plot, thus decide which is the best approach to handle the data:
+```{r}
+best_rf_reg<- select_best(tune_reg)
+final_rf_model<- finalize_workflow(rf_reg_wf, best_rf_reg)
+final_rf_model<- fit(final_rf_model, admin_train)
+final_rf_model %>% 
+  extract_fit_parsnip() %>%
+  vip() + theme_minimal()
+```
+
+This graph shows us the three most useful predictors of `Chance_of_Admit` in this model are the GRE Score, GPA and TOEFL Score. Let's see its performance on the testing data by checking out its resulted RMSE and further create a scatterplot comparing the actual values and the predicted values:
+
+```{r}
+final_rf_model_test<- augment(final_rf_model, admin_test)
+rmse(final_rf_model_test, truth = Chance_of_Admit, .pred)
+final_rf_model_test %>%
+  ggplot(aes(x = Chance_of_Admit, y = .pred)) +
+  geom_point(alpha = 0.5) +
+  theme_minimal()
+```
+
+The RMSE is actually smaller than the RMSE we had for the testing data resulted from other models. Now, let's take a look at our classification data:
+```{r}
+best_rf_class<- select_best(tune_class)
+final_rf_class<- finalize_workflow(rf_class_wf, best_rf_class)
+final_rf_class<- fit(final_rf_class, admin_train_c)
+final_rf_class_test<- augment(final_rf_class, admin_test_c)
+conf_mat(final_rf_class_test, truth = Result, .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+Our model for classification has done an incredible job without having any wrong predictions!
+
+### Conclusion - Best Model
+By comparing the results from both approach under the same model, I think the best approach to analyze this dataset is by classification. No matter under what kind of model, it will always generate a high ROC AUC and accuracy, but the best is definitely through random trees model.
+
+![](/Users/mxx/Downloads/Final%20Project/giphy.gif){style="display: block; margin: 1em auto"}
+
+Congratulations! We are done! Good luck to all the graduates on their master application!
+
+## Concerns
+
+The dataset does not contain any missing value, however, there are bias in the original source data, since the ranking scale on both `University Rating` and `SOR` (Statement of Purpose and Letter of Recommendation Strength) are not stated. Furthermore, the data were collected for prediction was conducted from an Indian perspective, so the prediction will be limited/narrowed.
+
+## Learnings
+
+The course and project I have undertaken have served as my introduction to the field of machine learning. It has solidified my determination to pursue postgraduate studies in this domain. As elucidated in the introduction, this project has not only aided me in predicting my personal probability of admission but has also instilled in me the aspiration to apply similar functionality on platforms like "U.S. News," akin to the "College Admissions Calculator" that you can find out your whether or not you are competitive by inputting your score and comparing it with the past result.
+
+Furthermore, I think the reason that the result from classification approach are more precise because the dataset was categorized based exactly on last year data, but since it only provided us the average score of each criteria rather than the specific background information of each applicants, we cannot create a perfect model. The models will be more precise if we have access to the dataset.
+
+Moreover, there are still many aspects to make improvements on for this project, for example, the categories made were limited. The result is not only limited to "Admitted" or "Rejected", it can also be "Waitlisted" that gives applicants more hope in getting in since there are some students are not limited applying to just one college that might give up this admittance and choose to go to another one they prefer.
+
+This project is extremely inspiring for me that it introduced me to various models and taught me how to analyze them. And I wish to pursue deeper learning in model constructing later on.
